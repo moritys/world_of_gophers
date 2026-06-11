@@ -9,7 +9,7 @@ import (
 
 type Config struct {
 	Token  string
-	DBPath string
+	DBURL string
 }
 
 func ParseConfig() Config {
@@ -20,6 +20,6 @@ func ParseConfig() Config {
 
 	return Config{
 		Token:  os.Getenv("BOT_TOKEN"),
-		DBPath: os.Getenv("DB_PATH"),
+		DBURL: os.Getenv("DATABASE_URL"),
 	}
 }
