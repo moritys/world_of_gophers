@@ -13,9 +13,8 @@ type Config struct {
 }
 
 func ParseConfig() Config {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Ошибка загрузки .env")
+	if err := godotenv.Load(); err != nil {
+		log.Println(".env не найден, используем переменные окружения")
 	}
 
 	return Config{

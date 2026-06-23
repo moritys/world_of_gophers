@@ -1,28 +1,43 @@
-# Source - https://stackoverflow.com/a/75246287
-# Posted by e741af0d41bc74bf854041f1fbdbf, modified by community. See post 'Timeline' for change history
-# Retrieved 2026-06-11, License - CC BY-SA 4.0
-
 services:
+  bot:
+    build: .
+    container_name: world_of_gophers
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - db
+
   db:
     container_name: postgres
     image: postgres
+
     environment:
       POSTGRES_USER: MASHA
       POSTGRES_PASSWORD: 1234
-      PGDATA: /data/postgres
       POSTGRES_DB: wog
+      PGDATA: /data/postgres
+
     volumes:
       - db:/data/postgres
+
     ports:
       - "5332:5432"
+
     networks:
       - db
+
     restart: unless-stopped
+
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -d postgres" ]
+      test: ["CMD-SHELL", "pg_isready -U MASHA -d wog"]
       interval: 30s
       timeout: 10s
       retries: 5
+
 networks:
   db:
     driver: bridge
