@@ -55,3 +55,10 @@ go build -o bot ./cmd/bot
 ```
 
 The Dockerfile builds with `CGO_ENABLED=0` for a static binary deployed on `debian:bookworm-slim`.
+
+## Game design & roadmap
+
+- `docs/game-design/` — the game design (hero, quests, achievements, bosses, skills, streaks,
+  currency), moved here from the Obsidian vault.
+- `roadmap/` — the development roadmap, split into stages that mirror the game design's
+  chapters/bosses. Start at `roadmap/00-overview.md` for the current status of each stage.
