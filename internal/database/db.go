@@ -12,8 +12,13 @@ import (
 const createTablesQuery = `
 CREATE TABLE IF NOT EXISTS player (
 	id BIGINT PRIMARY KEY,
-	name TEXT,
-	level INTEGER DEFAULT 1
+	name TEXT NOT NULL,
+	level INTEGER NOT NULL DEFAULT 1,
+	xp INTEGER NOT NULL DEFAULT 0,
+	gold INTEGER NOT NULL DEFAULT 0,
+	strength INTEGER NOT NULL DEFAULT 0,
+	knowledge INTEGER NOT NULL DEFAULT 0,
+	focus INTEGER NOT NULL DEFAULT 0
 );
 `
 
@@ -42,7 +47,7 @@ func CreateTables(ctx context.Context, pool *pgxpool.Pool) error {
 func CreatePlayer(
 	ctx context.Context,
 	pool *pgxpool.Pool,
-	playerID int,
+	playerID int64,
 	name string,
 ) error {
 	query := `
@@ -57,19 +62,20 @@ func CreatePlayer(
 func GetUserByID(
 	ctx context.Context,
 	pool *pgxpool.Pool,
-	playerID int,
+	playerID int64,
 ) (models.Player, error) {
 	query := `
-	SELECT id, name, level FROM player
+	SELECT * FROM player
 	WHERE id=$1;
 	`
 
 	player := models.Player{}
 
-	err := pool.QueryRow(ctx, query, playerID).Scan(&player.ID, &player.Name, &player.Level)
+	err := pool.QueryRow(ctx, query, playerID).Scan(
+		&player.ID, &player.Name, &player.Level, &player.XP, &player.Gold, &player.Strength, &player.Knowledge, &player.Focus)
 	if err != nil {
-		fmt.Println("Ошибка поиска игрока", err)
+		return player, fmt.Errorf("поиск игрока %d: %w", playerID, err)
 	}
 
-	return player, err
+	return player, nil
 }

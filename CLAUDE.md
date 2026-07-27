@@ -28,6 +28,16 @@ Connect to the local DB (exposed on port 5332):
 psql -h localhost -p 5332 -U MASHA -d wog
 ```
 
+## Commands
+
+```
+go build -o bot ./cmd/bot   # build
+go vet ./...                # lint
+go test ./...               # run tests (none exist yet — added in roadmap stages 07–09)
+```
+
+The Dockerfile builds with `CGO_ENABLED=0` for a static binary on `debian:bookworm-slim`.
+
 ## Environment variables
 
 Required in `.env`:
@@ -46,19 +56,19 @@ internal/models/         — plain Go structs (Player)
 
 **Data flow:** `main` creates a `pgxpool.Pool` → calls `CreateTables` (idempotent, runs every startup) → enters the Telegram update loop → each message goes to `bot.HandleMessage` which reads/writes via `database.*` functions.
 
-**DB access pattern:** raw SQL via `pgx/v5`, no ORM. All queries live in `internal/database/db.go`. The `player` table has `id` (Telegram user ID), `name`, and `level`.
+**DB access pattern:** raw SQL via `pgx/v5`, no ORM. All queries live in `internal/database/db.go`.
 
-## Build
+## Current state gaps to be aware of
 
-```
-go build -o bot ./cmd/bot
-```
+- **Only `/start` is handled.** All other messages are silently dropped in `HandleMessage`.
+- **`Player` struct vs DB schema mismatch.** `models.Player` has `XP`, `Gold`, `Strength`, `Knowledge`, `Focus` fields, but `CreateTables` only creates columns for `id`, `name`, `level`. `ReturnText` in `bot.go` shows `XP: 0, Gold: 0` as hardcoded placeholders, not DB values. When adding new game mechanics, both the DB schema and the struct's `Scan` call need updating together.
+- **No migrations tooling yet.** Schema is created via raw `CREATE TABLE IF NOT EXISTS` at startup. Future schema changes (new columns, tables) must be added either to `CreateTables` or via a proper migration system (planned in stage 08).
 
-The Dockerfile builds with `CGO_ENABLED=0` for a static binary deployed on `debian:bookworm-slim`.
+## Language convention
+
+User-facing strings and log messages are in Russian. Internal identifiers (variables, functions, packages) are in English.
 
 ## Game design & roadmap
 
-- `docs/game-design/` — the game design (hero, quests, achievements, bosses, skills, streaks,
-  currency), moved here from the Obsidian vault.
-- `roadmap/` — the development roadmap, split into stages that mirror the game design's
-  chapters/bosses. Start at `roadmap/00-overview.md` for the current status of each stage.
+- `docs/game-design/` — the game design (hero, quests, achievements, bosses, skills, streaks, currency).
+- `roadmap/` — development roadmap split into stages. Start at `roadmap/00-overview.md` for current status. Stages 01–06 stay within the existing Telegram+DB setup; stages 07–09 add HTTP, tests, and migrations.

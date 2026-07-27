@@ -8,7 +8,7 @@ import (
 )
 
 type Config struct {
-	Token  string
+	Token string
 	DBURL string
 }
 
@@ -18,7 +18,7 @@ func ParseConfig() Config {
 	}
 
 	return Config{
-		Token:  os.Getenv("BOT_TOKEN"),
+		Token: os.Getenv("BOT_TOKEN"),
 		DBURL: os.Getenv("DATABASE_URL"),
 	}
 }
