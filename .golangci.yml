@@ -1,0 +1,25 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - errcheck
+    - errname
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - gocritic
+    - revive
+  exclusions:
+    presets:
+      - comments
+      - common-false-positives
+    rules:
+      - linters:
+          - errcheck
+        path: _test\.go
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports

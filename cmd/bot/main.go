@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -11,25 +12,31 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	ctx := context.Background()
 	cfg := config.ParseConfig()
 
 	// db pool
 	db, err := database.GetDBPool(cfg.DBURL)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("подключение к БД:%w", err)
 	}
 	defer db.Close()
 	log.Println("Database connected!")
 
 	if err := database.CreateTables(ctx, db); err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("создание таблицы БД:%w", err)
 	}
 
 	// bot start
 	bot, err := tgbotapi.NewBotAPI(cfg.Token)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("создание клиента бота:%w", err)
 	}
 
 	bot.Debug = true
@@ -46,4 +53,6 @@ func main() {
 			handleBot.HandleMessage(bot, update, db)
 		}
 	}
+
+	return nil
 }
