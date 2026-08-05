@@ -18,20 +18,24 @@ func main() {
 }
 
 func run() error {
+	var _ handleBot.PlayerStore = (*database.Storage)(nil)
+	var _ handleBot.MessageSender = (*tgbotapi.BotAPI)(nil)
 	ctx := context.Background()
 	cfg := config.ParseConfig()
 
 	// db pool
-	db, err := database.GetDBPool(cfg.DBURL)
+	pool, err := database.GetDBPool(cfg.DBURL)
 	if err != nil {
 		return fmt.Errorf("подключение к БД:%w", err)
 	}
-	defer db.Close()
+	defer pool.Close()
 	log.Println("Database connected!")
 
-	if err := database.CreateTables(ctx, db); err != nil {
+	if err := database.CreateTables(ctx, pool); err != nil {
 		return fmt.Errorf("создание таблицы БД:%w", err)
 	}
+
+	storage := database.NewStorage(pool)
 
 	// bot start
 	bot, err := tgbotapi.NewBotAPI(cfg.Token)
@@ -50,7 +54,7 @@ func run() error {
 
 	for update := range updates {
 		if update.Message != nil {
-			handleBot.HandleMessage(bot, update, db)
+			handleBot.HandleMessage(bot, update, storage)
 		}
 	}
 

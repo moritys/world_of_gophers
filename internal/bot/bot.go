@@ -8,8 +8,7 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/moritys/world_of_gophers/internal/database"
+	"github.com/moritys/world_of_gophers/internal/models"
 )
 
 const (
@@ -32,16 +31,25 @@ const (
 	`
 )
 
-func reply(bot *tgbotapi.BotAPI, chatID int64, text string) {
-	if _, err := bot.Send(tgbotapi.NewMessage(chatID, text)); err != nil {
-		log.Printf("отправка сообщения пользователю %d: %v", chatID, err)
+type PlayerStore interface {
+	CreatePlayer(ctx context.Context, id int64, name string) error
+	GetPlayer(ctx context.Context, id int64) (models.Player, error)
+}
+
+type MessageSender interface {
+	Send(c tgbotapi.Chattable) (tgbotapi.Message, error)
+}
+
+func reply(sender MessageSender, id int64, text string) {
+	if _, err := sender.Send(tgbotapi.NewMessage(id, text)); err != nil {
+		log.Printf("отправка сообщения пользователю %d: %v", id, err)
 	}
 }
 
 func HandleMessage(
-	bot *tgbotapi.BotAPI,
+	sender MessageSender,
 	update tgbotapi.Update,
-	pool *pgxpool.Pool,
+	store PlayerStore,
 ) {
 	ctx := context.Background()
 	userID := update.Message.From.ID
@@ -49,26 +57,26 @@ func HandleMessage(
 	text := update.Message.Text
 
 	if text == "/start" {
-		existPlayer, err := database.GetUserByID(ctx, pool, userID)
+		existPlayer, err := store.GetPlayer(ctx, userID)
 
 		if errors.Is(err, pgx.ErrNoRows) {
-			err = database.CreatePlayer(ctx, pool, userID, name)
+			err = store.CreatePlayer(ctx, userID, name)
 			if err != nil {
 				log.Printf("создание игрока %d: %v", userID, err)
-				reply(bot, userID, ErrorText)
+				reply(sender, userID, ErrorText)
 				return
 			}
-			reply(bot, userID, WelcomeText)
+			reply(sender, userID, WelcomeText)
 			return
 		}
 
 		if err != nil {
 			log.Printf("получение игрока %d: %v", userID, err)
-			reply(bot, userID, ErrorText)
+			reply(sender, userID, ErrorText)
 			return
 		}
 
-		reply(bot, userID, fmt.Sprintf(ReturnText, existPlayer.Name, existPlayer.Level))
+		reply(sender, userID, fmt.Sprintf(ReturnText, existPlayer.Name, existPlayer.Level))
 		return
 	}
 }
