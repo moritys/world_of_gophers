@@ -7,7 +7,7 @@ import (
 	"log"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/jackc/pgx/v5"
+	"github.com/moritys/world_of_gophers/internal/database"
 	"github.com/moritys/world_of_gophers/internal/models"
 )
 
@@ -59,7 +59,7 @@ func HandleMessage(
 	if text == "/start" {
 		existPlayer, err := store.GetPlayer(ctx, userID)
 
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, database.ErrPlayerNotFound) {
 			err = store.CreatePlayer(ctx, userID, name)
 			if err != nil {
 				log.Printf("создание игрока %d: %v", userID, err)
