@@ -23,8 +23,8 @@ const (
 	С возвращением в World of Gophers, %s!
 
 	Текущий уровень: %d
-	XP: 0
-	Gold: 0
+	XP: %d
+	Gold: %d
 	`
 	ErrorText = `
 	Произошла ошибка, попробуйте позже 🩹
@@ -76,7 +76,7 @@ func HandleMessage(
 			return
 		}
 
-		reply(sender, userID, fmt.Sprintf(ReturnText, existPlayer.Name, existPlayer.Level))
+		reply(sender, userID, fmt.Sprintf(ReturnText, existPlayer.Name, existPlayer.Level, existPlayer.XP, existPlayer.Gold))
 		return
 	}
 }
