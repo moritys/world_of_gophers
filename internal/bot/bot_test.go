@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/jackc/pgx/v5"
+	"github.com/moritys/world_of_gophers/internal/database"
 	"github.com/moritys/world_of_gophers/internal/models"
 )
 
@@ -113,7 +113,7 @@ func TestHandleMessage_NewPlayer(t *testing.T) {
 	// ── 1. ПОДГОТОВИТЬ ──────────────────────────────────────
 	// Настраиваем фейк так, чтобы он изобразил «игрок не найден».
 	// Именно на эту ошибку смотрит HandleMessage через errors.Is.
-	store := &fakeStore{getErr: pgx.ErrNoRows}
+	store := &fakeStore{getErr: database.ErrPlayerNotFound}
 	sender := &fakeBot{}
 	update := makeUpdate(42, "masha", "/start")
 

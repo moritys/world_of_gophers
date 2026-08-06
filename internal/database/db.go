@@ -2,8 +2,10 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/moritys/world_of_gophers/internal/models"
@@ -21,6 +23,8 @@ CREATE TABLE IF NOT EXISTS player (
 	focus INTEGER NOT NULL DEFAULT 0
 );
 `
+
+var ErrPlayerNotFound = errors.New("игрок не найден")
 
 type Storage struct {
 	pool *pgxpool.Pool
@@ -57,6 +61,10 @@ func (s *Storage) GetPlayer(
 
 	err := s.pool.QueryRow(ctx, query, id).Scan(
 		&player.ID, &player.Name, &player.Level, &player.XP, &player.Gold, &player.Strength, &player.Knowledge, &player.Focus)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return player, ErrPlayerNotFound
+	}
 	if err != nil {
 		return player, fmt.Errorf("поиск игрока %d: %w", id, err)
 	}
