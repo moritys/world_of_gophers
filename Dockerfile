@@ -9,9 +9,11 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o bot ./cmd/bot
 
-FROM debian:bookworm-slim
+FROM alpine:3.23
 
 WORKDIR /app
+
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 COPY --from=builder /app/bot .
 

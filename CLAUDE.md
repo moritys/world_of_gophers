@@ -36,7 +36,7 @@ go vet ./...                # lint
 go test ./...               # run tests (none exist yet — added in roadmap stages 07–09)
 ```
 
-The Dockerfile builds with `CGO_ENABLED=0` for a static binary on `debian:bookworm-slim`.
+The Dockerfile builds with `CGO_ENABLED=0` for a static binary on `alpine`. The runtime stage copies `/etc/ssl/certs/ca-certificates.crt` from the builder — without it the bot can't establish TLS to `api.telegram.org`.
 
 ## Environment variables
 

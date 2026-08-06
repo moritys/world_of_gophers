@@ -22,8 +22,47 @@ CREATE TABLE IF NOT EXISTS player (
 );
 `
 
-// создать ф-ю для создания пользователя
-// получение пользователя по айди
+type Storage struct {
+	pool *pgxpool.Pool
+}
+
+func NewStorage(pool *pgxpool.Pool) *Storage {
+	return &Storage{pool: pool}
+}
+
+func (s *Storage) CreatePlayer(
+	ctx context.Context,
+	id int64,
+	name string,
+) error {
+	query := `
+	INSERT INTO player (id, name)
+	VALUES ($1, $2);
+	`
+
+	_, err := s.pool.Exec(ctx, query, id, name)
+	return err
+}
+
+func (s *Storage) GetPlayer(
+	ctx context.Context,
+	id int64,
+) (models.Player, error) {
+	query := `
+	SELECT id, name, level, xp, gold, strength, knowledge, focus FROM player
+	WHERE id=$1;
+	`
+
+	player := models.Player{}
+
+	err := s.pool.QueryRow(ctx, query, id).Scan(
+		&player.ID, &player.Name, &player.Level, &player.XP, &player.Gold, &player.Strength, &player.Knowledge, &player.Focus)
+	if err != nil {
+		return player, fmt.Errorf("поиск игрока %d: %w", id, err)
+	}
+
+	return player, nil
+}
 
 func GetDBPool(connString string) (*pgxpool.Pool, error) {
 	db, err := pgxpool.New(context.Background(), connString)
@@ -42,40 +81,4 @@ func GetDBPool(connString string) (*pgxpool.Pool, error) {
 func CreateTables(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err := pool.Exec(ctx, createTablesQuery)
 	return err
-}
-
-func CreatePlayer(
-	ctx context.Context,
-	pool *pgxpool.Pool,
-	playerID int64,
-	name string,
-) error {
-	query := `
-	INSERT INTO player (id, name)
-	VALUES ($1, $2);
-	`
-
-	_, err := pool.Exec(ctx, query, playerID, name)
-	return err
-}
-
-func GetUserByID(
-	ctx context.Context,
-	pool *pgxpool.Pool,
-	playerID int64,
-) (models.Player, error) {
-	query := `
-	SELECT * FROM player
-	WHERE id=$1;
-	`
-
-	player := models.Player{}
-
-	err := pool.QueryRow(ctx, query, playerID).Scan(
-		&player.ID, &player.Name, &player.Level, &player.XP, &player.Gold, &player.Strength, &player.Knowledge, &player.Focus)
-	if err != nil {
-		return player, fmt.Errorf("поиск игрока %d: %w", playerID, err)
-	}
-
-	return player, nil
 }
