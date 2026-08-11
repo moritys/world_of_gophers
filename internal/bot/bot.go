@@ -46,12 +46,26 @@ func reply(sender MessageSender, id int64, text string) {
 	}
 }
 
+func reportErr(sender MessageSender, userID int64, what string, err error) {
+	switch {
+	case errors.Is(err, context.Canceled):
+		log.Printf("info: %s %d: %v", what, userID, err)
+		// не отправляем ничего пользователю, тк контекст отменили
+	case errors.Is(err, context.DeadlineExceeded):
+		log.Printf("warn: %s %d: %v", what, userID, err)
+		reply(sender, userID, ErrorText)
+	default:
+		log.Printf("error: %s %d: %v", what, userID, err)
+		reply(sender, userID, ErrorText)
+	}
+}
+
 func HandleMessage(
+	ctx context.Context,
 	sender MessageSender,
 	update tgbotapi.Update,
 	store PlayerStore,
 ) {
-	ctx := context.Background()
 	userID := update.Message.From.ID
 	name := update.Message.From.UserName
 	text := update.Message.Text
@@ -62,17 +76,16 @@ func HandleMessage(
 		if errors.Is(err, database.ErrPlayerNotFound) {
 			err = store.CreatePlayer(ctx, userID, name)
 			if err != nil {
-				log.Printf("создание игрока %d: %v", userID, err)
-				reply(sender, userID, ErrorText)
+				reportErr(sender, userID, "создание игрока", err)
 				return
 			}
+
 			reply(sender, userID, WelcomeText)
 			return
 		}
 
 		if err != nil {
-			log.Printf("получение игрока %d: %v", userID, err)
-			reply(sender, userID, ErrorText)
+			reportErr(sender, userID, "получение игрока", err)
 			return
 		}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -43,6 +44,8 @@ func (s *Storage) CreatePlayer(
 	INSERT INTO player (id, name)
 	VALUES ($1, $2);
 	`
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
 
 	_, err := s.pool.Exec(ctx, query, id, name)
 	return err
@@ -56,6 +59,8 @@ func (s *Storage) GetPlayer(
 	SELECT id, name, level, xp, gold, strength, knowledge, focus FROM player
 	WHERE id=$1;
 	`
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
 
 	player := models.Player{}
 
@@ -72,13 +77,16 @@ func (s *Storage) GetPlayer(
 	return player, nil
 }
 
-func GetDBPool(connString string) (*pgxpool.Pool, error) {
-	db, err := pgxpool.New(context.Background(), connString)
+func GetDBPool(ctx context.Context, connString string) (*pgxpool.Pool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	db, err := pgxpool.New(ctx, connString)
 	if err != nil {
 		return nil, fmt.Errorf("create pool: %w", err)
 	}
 
-	if err := db.Ping(context.Background()); err != nil {
+	if err := db.Ping(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
@@ -87,6 +95,9 @@ func GetDBPool(connString string) (*pgxpool.Pool, error) {
 }
 
 func CreateTables(ctx context.Context, pool *pgxpool.Pool) error {
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+
 	_, err := pool.Exec(ctx, createTablesQuery)
 	return err
 }

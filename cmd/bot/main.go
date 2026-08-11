@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	handleBot "github.com/moritys/world_of_gophers/internal/bot"
@@ -24,7 +25,7 @@ func run() error {
 	cfg := config.ParseConfig()
 
 	// db pool
-	pool, err := database.GetDBPool(cfg.DBURL)
+	pool, err := database.GetDBPool(ctx, cfg.DBURL)
 	if err != nil {
 		return fmt.Errorf("подключение к БД:%w", err)
 	}
@@ -53,9 +54,15 @@ func run() error {
 	updates := bot.GetUpdatesChan(u)
 
 	for update := range updates {
-		if update.Message != nil {
-			handleBot.HandleMessage(bot, update, storage)
+		if update.Message == nil {
+			continue
 		}
+
+		func() {
+			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			handleBot.HandleMessage(ctx, bot, update, storage)
+		}()
 	}
 
 	return nil
