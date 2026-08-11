@@ -24,8 +24,9 @@ import (
 //	created, ...    — ЧТО ЗАПОМНИЛИ. Заполняется во время вызова, проверяем после.
 type fakeStore struct {
 	// что отдавать
-	player models.Player
-	getErr error
+	player    models.Player
+	getErr    error
+	createErr error
 
 	// что запомнили
 	created     bool
@@ -43,7 +44,7 @@ func (f *fakeStore) CreatePlayer(_ context.Context, id int64, name string) error
 	f.created = true
 	f.createdID = id
 	f.createdName = name
-	return nil
+	return f.createErr
 }
 
 // fakeBot подменяет Телеграм: вместо отправки складывает тексты в слайс.
@@ -113,13 +114,14 @@ func TestHandleMessage_NewPlayer(t *testing.T) {
 	// ── 1. ПОДГОТОВИТЬ ──────────────────────────────────────
 	// Настраиваем фейк так, чтобы он изобразил «игрок не найден».
 	// Именно на эту ошибку смотрит HandleMessage через errors.Is.
+	ctx := context.Background()
 	store := &fakeStore{getErr: database.ErrPlayerNotFound}
 	sender := &fakeBot{}
 	update := makeUpdate(42, "masha", "/start")
 
 	// ── 2. ВЫПОЛНИТЬ ────────────────────────────────────────
 	// Ровно один вызов тестируемой функции.
-	HandleMessage(sender, update, store)
+	HandleMessage(ctx, sender, update, store)
 
 	// ── 3. ПРОВЕРИТЬ ────────────────────────────────────────
 	// Проверяем ОБЕ стороны поведения: что сделали с хранилищем
@@ -148,7 +150,7 @@ func TestHandleMessage_NewPlayer(t *testing.T) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// ТЕСТ 2 — твой
+// ТЕСТ 2
 // ═══════════════════════════════════════════════════════════
 
 // Сценарий: игрок уже есть в базе.
@@ -164,6 +166,7 @@ func TestHandleMessage_NewPlayer(t *testing.T) {
 // имени и уровня по отдельности. Уровень придётся превратить в строку:
 // strconv.Itoa или fmt.Sprintf("%d", ...).
 func TestHandleMessage_ExistingPlayer(t *testing.T) {
+	ctx := context.Background()
 	store := &fakeStore{}
 	store.player = models.Player{
 		ID:    67,
@@ -175,7 +178,7 @@ func TestHandleMessage_ExistingPlayer(t *testing.T) {
 	sender := &fakeBot{}
 	update := makeUpdate(67, "sasha", "/start")
 
-	HandleMessage(sender, update, store)
+	HandleMessage(ctx, sender, update, store)
 
 	if store.created {
 		t.Fatal("игрок был создан, хотя уже сущестует")
@@ -187,7 +190,7 @@ func TestHandleMessage_ExistingPlayer(t *testing.T) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// ТЕСТ 3 — твой
+// ТЕСТ 3
 // ═══════════════════════════════════════════════════════════
 
 // Сценарий: база вернула произвольную ошибку (не ErrNoRows).
@@ -197,12 +200,13 @@ func TestHandleMessage_ExistingPlayer(t *testing.T) {
 //   - store.created остался false
 //   - отправлен ErrorText
 func TestHandleMessage_StorageError(t *testing.T) {
+	ctx := context.Background()
 	store := &fakeStore{}
 	store.getErr = errors.New("какая то ошибка случилась")
 	sender := &fakeBot{}
 	update := makeUpdate(67, "sasha", "/start")
 
-	HandleMessage(sender, update, store)
+	HandleMessage(ctx, sender, update, store)
 
 	if store.created {
 		t.Errorf("пользователь %d был создан, но не должен был", store.player.ID)
@@ -212,5 +216,61 @@ func TestHandleMessage_StorageError(t *testing.T) {
 	}
 	if sender.sent[0] != ErrorText {
 		t.Errorf("отправили сообщение: %s, хотели: %s", sender.sent[0], ErrorText)
+	}
+}
+
+// ═══════════════════════════════════════════════════════════
+// ТЕСТ 4
+// ═══════════════════════════════════════════════════════════
+
+// Сценарий: таймаут контекста истек при создании игрока в базе.
+//
+// Подготовить: store с getErr = database.ErrPlayerNotFound, createErr = context.DeadlineExceeded.
+// Проверить:
+//   - sender.sent только 1 сообщение
+//   - отправлен ErrorText
+
+func TestHandleMessage_CreateError_DeadlineExceeded(t *testing.T) {
+	ctx := context.Background()
+	store := &fakeStore{getErr: database.ErrPlayerNotFound, createErr: context.DeadlineExceeded}
+	sender := &fakeBot{}
+	update := makeUpdate(42, "masha", "/start")
+
+	HandleMessage(ctx, sender, update, store)
+
+	if !store.created {
+		t.Fatal("CreatePlayer не вызвана, а игрока в базе не было")
+	}
+	if len(sender.sent) != 1 {
+		t.Fatalf("отправлено %d сообщений, хотим ровно 1: %v", len(sender.sent), sender.sent)
+	}
+	if sender.sent[0] != ErrorText {
+		t.Errorf("отправили:\n%q\nхотим ErrorText:\n%q", sender.sent[0], ErrorText)
+	}
+}
+
+// ═══════════════════════════════════════════════════════════
+// ТЕСТ 5
+// ═══════════════════════════════════════════════════════════
+
+// Сценарий: контекст отменен при создании игрока в базе.
+//
+// Подготовить: store с getErr = database.ErrPlayerNotFound, createErr = context.Canceled.
+// Проверить:
+//   - sender.sent 0 сообщений
+
+func TestHandleMessage_CreateError(t *testing.T) {
+	ctx := context.Background()
+	store := &fakeStore{getErr: database.ErrPlayerNotFound, createErr: context.Canceled}
+	sender := &fakeBot{}
+	update := makeUpdate(42, "masha", "/start")
+
+	HandleMessage(ctx, sender, update, store)
+
+	if !store.created {
+		t.Fatal("CreatePlayer не вызвана, а игрока в базе не было")
+	}
+	if len(sender.sent) != 0 {
+		t.Fatalf("отправлено %d сообщений, хотим ровно 0: %v", len(sender.sent), sender.sent)
 	}
 }
