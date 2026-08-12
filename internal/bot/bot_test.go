@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/moritys/world_of_gophers/internal/database"
@@ -27,24 +29,37 @@ type fakeStore struct {
 	player    models.Player
 	getErr    error
 	createErr error
+	delay     time.Duration
 
 	// что запомнили
-	created     bool
-	createdID   int64
-	createdName string
+	createFinished bool
+	createdID      int64
+	createdName    string
 }
 
 // Методы с УКАЗАТЕЛЬНЫМ получателем — иначе запись в поля не будет видна снаружи.
 // Значит интерфейсу удовлетворяет *fakeStore, и передавать надо &fakeStore{}.
-func (f *fakeStore) GetPlayer(_ context.Context, _ int64) (models.Player, error) {
-	return f.player, f.getErr
+func (f *fakeStore) GetPlayer(ctx context.Context, _ int64) (models.Player, error) {
+	select {
+	case <-ctx.Done():
+		return models.Player{}, ctx.Err()
+	case <-time.After(f.delay):
+		return f.player, f.getErr
+	}
 }
 
-func (f *fakeStore) CreatePlayer(_ context.Context, id int64, name string) error {
-	f.created = true
-	f.createdID = id
-	f.createdName = name
-	return f.createErr
+func (f *fakeStore) CreatePlayer(ctx context.Context, id int64, name string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(f.delay):
+		// ставим маркер создания сюда, тк есть шанс, что контекст отменили сразу,
+		// а это значит что и создание могло не пройти
+		f.createFinished = true
+		f.createdID = id
+		f.createdName = name
+		return f.createErr
+	}
 }
 
 // fakeBot подменяет Телеграм: вместо отправки складывает тексты в слайс.
@@ -114,7 +129,7 @@ func TestHandleMessage_NewPlayer(t *testing.T) {
 	// ── 1. ПОДГОТОВИТЬ ──────────────────────────────────────
 	// Настраиваем фейк так, чтобы он изобразил «игрок не найден».
 	// Именно на эту ошибку смотрит HandleMessage через errors.Is.
-	ctx := context.Background()
+	ctx := t.Context()
 	store := &fakeStore{getErr: database.ErrPlayerNotFound}
 	sender := &fakeBot{}
 	update := makeUpdate(42, "masha", "/start")
@@ -128,7 +143,7 @@ func TestHandleMessage_NewPlayer(t *testing.T) {
 	// и что отправили пользователю.
 
 	// сторона хранилища
-	if !store.created {
+	if !store.createFinished {
 		// Fatalf, а не Errorf: если игрока не создали, проверять
 		// остальное бессмысленно — сценарий уже провален.
 		t.Fatal("CreatePlayer не вызвана, а игрока в базе не было")
@@ -166,7 +181,7 @@ func TestHandleMessage_NewPlayer(t *testing.T) {
 // имени и уровня по отдельности. Уровень придётся превратить в строку:
 // strconv.Itoa или fmt.Sprintf("%d", ...).
 func TestHandleMessage_ExistingPlayer(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := &fakeStore{}
 	store.player = models.Player{
 		ID:    67,
@@ -180,7 +195,7 @@ func TestHandleMessage_ExistingPlayer(t *testing.T) {
 
 	HandleMessage(ctx, sender, update, store)
 
-	if store.created {
+	if store.createFinished {
 		t.Fatal("игрок был создан, хотя уже сущестует")
 	}
 	if len(sender.sent) != 1 {
@@ -200,7 +215,7 @@ func TestHandleMessage_ExistingPlayer(t *testing.T) {
 //   - store.created остался false
 //   - отправлен ErrorText
 func TestHandleMessage_StorageError(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := &fakeStore{}
 	store.getErr = errors.New("какая то ошибка случилась")
 	sender := &fakeBot{}
@@ -208,7 +223,7 @@ func TestHandleMessage_StorageError(t *testing.T) {
 
 	HandleMessage(ctx, sender, update, store)
 
-	if store.created {
+	if store.createFinished {
 		t.Errorf("пользователь %d был создан, но не должен был", store.player.ID)
 	}
 	if len(sender.sent) != 1 {
@@ -231,14 +246,14 @@ func TestHandleMessage_StorageError(t *testing.T) {
 //   - отправлен ErrorText
 
 func TestHandleMessage_CreateError_DeadlineExceeded(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := &fakeStore{getErr: database.ErrPlayerNotFound, createErr: context.DeadlineExceeded}
 	sender := &fakeBot{}
 	update := makeUpdate(42, "masha", "/start")
 
 	HandleMessage(ctx, sender, update, store)
 
-	if !store.created {
+	if !store.createFinished {
 		t.Fatal("CreatePlayer не вызвана, а игрока в базе не было")
 	}
 	if len(sender.sent) != 1 {
@@ -259,18 +274,81 @@ func TestHandleMessage_CreateError_DeadlineExceeded(t *testing.T) {
 // Проверить:
 //   - sender.sent 0 сообщений
 
-func TestHandleMessage_CreateError(t *testing.T) {
-	ctx := context.Background()
+func TestHandleMessage_CreateError_Canceled(t *testing.T) {
+	ctx := t.Context()
 	store := &fakeStore{getErr: database.ErrPlayerNotFound, createErr: context.Canceled}
 	sender := &fakeBot{}
 	update := makeUpdate(42, "masha", "/start")
 
 	HandleMessage(ctx, sender, update, store)
 
-	if !store.created {
+	if !store.createFinished {
 		t.Fatal("CreatePlayer не вызвана, а игрока в базе не было")
 	}
 	if len(sender.sent) != 0 {
 		t.Fatalf("отправлено %d сообщений, хотим ровно 0: %v", len(sender.sent), sender.sent)
 	}
+}
+
+// ═══════════════════════════════════════════════════════════
+// ТЕСТ 6
+// ═══════════════════════════════════════════════════════════
+
+// Сценарий: контекст с маленьким таймаутом, fakestore с большой задержкой. Проверка через обычные часы.
+//
+// Подготовить: store с getErr = database.ErrPlayerNotFound, delay поставить больше чем таймаут у контекста.
+// Проверить:
+//   - sender.sent 1 сообщение с ошибкой
+
+func TestHandleMessage_Timeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	store := &fakeStore{getErr: database.ErrPlayerNotFound, delay: 5 * time.Second}
+	sender := &fakeBot{}
+	update := makeUpdate(42, "masha", "/start")
+
+	HandleMessage(ctx, sender, update, store)
+
+	if len(sender.sent) != 1 {
+		t.Fatalf("отправлено %d сообщений, хотим ровно 1: %v", len(sender.sent), sender.sent)
+	}
+	if sender.sent[0] != ErrorText {
+		t.Errorf("отправили:\n%q\nхотим ErrorText:\n%q", sender.sent[0], ErrorText)
+	}
+}
+
+// ═══════════════════════════════════════════════════════════
+// ТЕСТ 7
+// ═══════════════════════════════════════════════════════════
+
+// Сценарий: контекст с маленьким таймаутом, fakestore с большой задержкой.
+// Проверка через synctest точной длительности выполнения + 0 времени на выполнение.
+//
+// Подготовить: store с getErr = database.ErrPlayerNotFound, delay поставить больше чем таймаут у контекста.
+// Проверить:
+//   - sender.sent 1 сообщение с ошибкой
+
+func TestHandleMessage_TimeoutSynctest(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		store := &fakeStore{getErr: database.ErrPlayerNotFound, delay: 30 * time.Second}
+		sender := &fakeBot{}
+		update := makeUpdate(42, "masha", "/start")
+		before := time.Now()
+		HandleMessage(ctx, sender, update, store)
+		elapsed := time.Since(before)
+		if elapsed != 2*time.Second {
+			t.Errorf("вышли через %v, хотим ровно 2s (бюджет)", elapsed)
+		}
+
+		if len(sender.sent) != 1 {
+			t.Fatalf("отправлено %d сообщений, хотим ровно 1: %v", len(sender.sent), sender.sent)
+		}
+		if sender.sent[0] != ErrorText {
+			t.Errorf("отправили:\n%q\nхотим ErrorText:\n%q", sender.sent[0], ErrorText)
+		}
+	})
 }
