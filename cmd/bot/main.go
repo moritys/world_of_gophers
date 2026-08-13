@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -21,7 +24,10 @@ func main() {
 func run() error {
 	var _ handleBot.PlayerStore = (*database.Storage)(nil)
 	var _ handleBot.MessageSender = (*tgbotapi.BotAPI)(nil)
-	ctx := context.Background()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	cfg := config.ParseConfig()
 
 	// db pool
@@ -29,7 +35,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("подключение к БД:%w", err)
 	}
-	defer pool.Close()
+	defer func() {
+		log.Println("закрываю пул БД...")
+		pool.Close()
+		log.Println("пул закрыт")
+	}()
 	log.Println("Database connected!")
 
 	if err := database.CreateTables(ctx, pool); err != nil {
@@ -52,18 +62,29 @@ func run() error {
 	u.Timeout = 60
 
 	updates := bot.GetUpdatesChan(u)
+	defer bot.StopReceivingUpdates()
 
-	for update := range updates {
-		if update.Message == nil {
-			continue
+	for {
+		select {
+		case update, ok := <-updates:
+			if !ok {
+				log.Println("канал обновлений закрыт, завершаюсь")
+				return nil
+			}
+
+			if update.Message == nil {
+				continue
+			}
+
+			func() {
+				ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				defer cancel()
+				handleBot.HandleMessage(ctx, bot, update, storage)
+			}()
+
+		case <-ctx.Done():
+			log.Println("получен сигнал, завершаюсь:", context.Cause(ctx))
+			return nil
 		}
-
-		func() {
-			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			defer cancel()
-			handleBot.HandleMessage(ctx, bot, update, storage)
-		}()
 	}
-
-	return nil
 }
