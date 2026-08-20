@@ -42,7 +42,8 @@ func (s *Storage) CreatePlayer(
 ) error {
 	query := `
 	INSERT INTO player (id, name)
-	VALUES ($1, $2);
+	VALUES ($1, $2)
+	ON CONFLICT (id) DO NOTHING;
 	`
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
