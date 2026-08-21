@@ -50,7 +50,8 @@ func run() error {
 		return err
 	}
 
-	return serve(ctx, bot, pool)
+	storage := database.NewStorage(pool)
+	return serve(ctx, bot, storage)
 }
 
 func waitTimeout(wg *sync.WaitGroup, d time.Duration) bool {
@@ -96,13 +97,12 @@ func setupBot(cfg *config.Config) (*tgbotapi.BotAPI, error) {
 	return bot, nil
 }
 
-func serve(ctx context.Context, bot *tgbotapi.BotAPI, pool *pgxpool.Pool) error {
+func serve(ctx context.Context, bot *tgbotapi.BotAPI, storage handleBot.PlayerStore) error {
 	sem := make(chan struct{}, 4) // максимум горутин одновременно
 	var (
 		inFlight atomic.Int64 // сколько прямо сейчас в работе
 		finished atomic.Int64 // сколько успели закончить
 	)
-	storage := database.NewStorage(pool)
 
 	var wg sync.WaitGroup
 	defer func() {
@@ -142,10 +142,15 @@ func serve(ctx context.Context, bot *tgbotapi.BotAPI, pool *pgxpool.Pool) error 
 			inFlight.Add(1)
 			wg.Go(func() {
 				defer func() { <-sem }()
+				// Отвязываем от сигнала: сообщение, взятое в работу, доводим до конца,
+				// чтобы пользователь получил ответ даже при выключении бота.
+				// Цена — задержка остановки, ограниченная waitTimeout.
+				ctx := context.WithoutCancel(ctx)
 				ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 				defer cancel()
 				defer inFlight.Add(-1)
 				defer finished.Add(1)
+
 				handleBot.HandleMessage(ctx, bot, update, storage)
 			})
 
