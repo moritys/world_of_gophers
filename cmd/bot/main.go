@@ -108,7 +108,7 @@ func serve(ctx context.Context, bot *tgbotapi.BotAPI, storage handleBot.PlayerSt
 	defer func() {
 		log.Printf("ожидаю завершения %d обработчиков...", inFlight.Load())
 		if waitTimeout(&wg, 5*time.Second) {
-			log.Printf("все завершились, обработано %d", finished.Load())
+			log.Printf("все завершились, всего обработано %d сообщений", finished.Load())
 		} else {
 			log.Printf("warn: таймаут, брошено %d", inFlight.Load())
 		}
